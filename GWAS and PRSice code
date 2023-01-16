@@ -1,0 +1,121 @@
+#ped/map transfer bed/bim/fam
+plink --file 1team --make-bed --out 1team
+#bed/bim/fam transfer ped/map
+plink --bfile 1team --recode --out 1team
+#合并文件
+plink --file cteam --merge dteam.ped dteam.map --recode --out mass91snp
+#pruning snp
+plink -bfile input --indep-pairwise 500 50 0.2 --out input_pruned
+#修改FID号
+plink --file plink --update-ids inputfile --recode --out newplink
+#提取某一个特定的SNP的信息
+plink --file 1team --extract 1team57snp.txt --recode --out 1team57snp
+#提取样本：
+plink --bfile 1team --noweb --keep XXX.txt --recode --make-bed --out 1team_XXX
+#删除特定样本
+plink --file 1team --remove XXX.txt --recode tab --out XXX
+#填充
+genipe-launcher --bfile 1team \
+--chrom autosomes \
+--filtering-rules 'ALL<0.01' \
+--info 0.4 \
+--hap-template 
+/home/database/1000genomes/1000GP_Phase3/1000GP_Phase3_chr{chrom}.hap
+.gz \
+--legend-template 
+/home/database/1000genomes/1000GP_Phase3/1000GP_Phase3_chr{chrom}.leg
+end.gz \
+--map-template 
+/home/database/1000genomes/1000GP_Phase3/genetic_map_chr{chrom}_combi
+ned_b37.txt \
+--sample-file 
+/home/database/1000genomes/1000GP_Phase3/1000GP_Phase3.sample \
+--output-dir gwasData-imputation \
+--bgzip
+
+cd gwasData-imputation 
+for i in {1..22};do echo "impute2-extractor \
+--impute2 chr$i/final_impute2/chr$i.imputed.impute2.gz \
+--format bed --maf 0.01 --info 0.4 --rate 0.95 \
+--out chr$i/final_impute2/chr$i.imputed &" >> extractor.cmd.sh; done;
+sh extractor.cmd.sh
+mkdir merge
+for i in {2..22};do echo -e "chr$i/final_impute2/chr$i.imputed.bed \
+chr$i/final_impute2/chr$i.imputed.bim \
+chr$i/final_impute2/chr$i.imputed.fam" >> merge.list; done
+plink --bfile chr1/final_impute2/chr1.imputed.qc \
+--merge-list merge.list --make-bed --out merge/gwasData.imputed.merged
+
+#主成分分析
+plink --file 1team --pca --out pca_1team
+#主成分分析绘图（R）
+library("ggplot2")
+hh<-read.table("D:/plink_win64_20210606/PCAkabo1_2.txt",header=T,sep="")
+sample.groups<- c(rep(1, 77), rep(2, 31))
+qplot(x=PC1,y=PC2, data=hh,colour=factor(sample.groups))+theme(legend.position="none")
+#logistic回归（调整协变量）
+plink --bfile 1team --remove XXX.txt --logistic --adjust --geno 0.05 --mind 0.1 --maf 0.01 --hwe 1e-5 --covar XXX.txt --hide-covar --pheno XXX.txt --out XXX
+#assoc回归（不可调整协变量）
+plink --bfile 1team --remove XXX.txt --assoc --adjust --geno 0.05 --mind 0.1 --maf 0.01 --hwe 1e-5 --pheno XXX.txt --out XXX
+#dominant 模型
+plink --bfile 1team --remove XXX.txt --logistic --dominant --adjust --geno 0.05 --mind 0.1 --maf 0.01 --hwe 1e-5 --covar XXX.txt --hide-covar --pheno XXX.txt --out XXX
+#用Perl拆分行
+perl+脚本(perl select_column.pl) XXXXX.txt
+#perl:for select samples form the same tissue 
+
+use strict;
+use warnings;
+
+my $file=shift;    #the whole file 
+
+open(OUT,">logistic_dom_GSA_shunbo_kasanheyi.fenlie.txt");
+
+my $count=0;
+
+open(IN,$file);
+while(defined(my $line= <IN>)){
+      chomp($line);
+      if($count>0){
+      	my @seg=split(/\s+/,$line); 
+      	#for(my $i=0;$i<@seg;$i++){
+        #  print OUT $seg[$i]."\t";
+        #  }
+        #print OUT "\n";
+         print OUT $seg[1]."\t".$seg[2]."\t".$seg[3]."\t".$seg[4]."\t".$seg[5]."\t".$seg[6]."\t".$seg[7]."\t".$seg[8]."\t".$seg[9]."\t"."\n";
+          }
+      $count++;
+    }
+#用R提取想要的文本信息
+data1=read.delim(file='D:/plink_win64_20210606/XXX.txt',header=F,row.names=NULL,sep="\t")
+data2=read.delim(file='D:/plink_win64_20210606/QQQ.txt',header=F,row.names=NULL,sep="\t")
+names(data1)=c("SNP","A1","P")
+names(data2)=c("SNP","OR","a")
+data1=select(data1,c(1:3))
+data2=select(data2,c(1:2))
+data3=left_join(data1,data2,by ="SNP")
+colnames(data3)[2]<- "A1"
+colnames(data3)[3]<- "P"
+colnames(data3)[4]<- "OR"
+data3
+write.table(data3,file="D:/plink_win64_20210606/WWW.txt",sep="\t",row.names=F,quote=F)
+
+#曼哈顿图/qq图
+install.packages("qqman")
+library('qqman')
+hh<-read.table("D:/plink_win64_20210606/XXX.txt",header=T,sep="")
+names(hh)=c("CHR","SNP","BP","A1","OR","P")
+manhattan(hh,main="GWAS Manhattan Plot",snp="SNP",chr="CHR",bp="BP",p="P",ylim=c(0,8),cex=0.8,cex.axis=0.8,suggestiveline = F,genomewideline = F,col=c("blue4", "orange3"))
+manhattan(hh, main = "Manhattan Plot",snp="SNP",chr="CHR",bp="BP",p="P", ylim = c(0, 5), cex = 0.6, cex.axis = 0.9, col = c("blue4", "orange3"), suggestiveline = F, genomewideline = 4)
+qq(hh$P)
+
+PRSice计算多基因风险评分
+Rscript ./PRSice.R --dir . \
+    --prsice ./PRSice_linux \
+    --base 1team.assoc \
+    --target 1cteam \
+    --thread 1 \
+    --stat OR \
+    --binary-target T \
+    --cov 1team_covar.txt \
+    --all-score
+    --out 1team
